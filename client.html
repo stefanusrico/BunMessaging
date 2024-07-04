@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Chat</title>
+  </head>
+  <body>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Type a message..." />
+    <select id="chatType">
+      <option value="group">Group Chat</option>
+      <option value="individual">Individual Chat</option>
+    </select>
+    <select id="targetSelect"></select>
+    <button onclick="sendMessage()">Send</button>
+    <input type="text" id="newGroupInput" placeholder="New group name" />
+    <button onclick="createGroup()">Create Group</button>
+    <button onclick="joinGroup()">Join Group</button>
+
+    <script>
+      const socket = new WebSocket("ws://localhost:3000/chat")
+      const messagesDiv = document.getElementById("messages")
+      const messageInput = document.getElementById("messageInput")
+      const chatTypeSelect = document.getElementById("chatType")
+      const targetSelect = document.getElementById("targetSelect")
+      const newGroupInput = document.getElementById("newGroupInput")
+
+      let currentUserId
+      let users = []
+      let groups = []
+
+      socket.addEventListener("open", (event) => {
+        console.log("Connected to WebSocket server")
+      })
+
+      socket.addEventListener("message", (event) => {
+        const data = JSON.parse(event.data)
+        let message
+
+        switch (data.type) {
+          case "individual":
+            message = `[Private] ${data.from}: ${data.content}`
+            break
+          case "group":
+            message = `[${data.group}] ${data.from}: ${data.content}`
+            break
+          case "system":
+            message = `[System] ${data.content}`
+            break
+          case "error":
+            message = `[Error] ${data.content}`
+            break
+          case "userList":
+            users = data.users
+            updateTargetSelect()
+            return
+          case "groupList":
+            groups = data.groups
+            updateTargetSelect()
+            return
+          case "userJoined":
+            users.push({ userId: data.userId, username: data.username })
+            updateTargetSelect()
+            message = `[System] ${data.username} has joined the chat`
+            break
+          case "userLeft":
+            users = users.filter((user) => user.userId !== data.userId)
+            updateTargetSelect()
+            message = `[System] ${data.username} has left the chat`
+            break
+        }
+
+        if (message) {
+          const messageElement = document.createElement("p")
+          messageElement.textContent = message
+          messagesDiv.appendChild(messageElement)
+        }
+      })
+
+      function sendMessage() {
+        const message = messageInput.value
+        const chatType = chatTypeSelect.value
+        const target = targetSelect.value
+
+        const data = {
+          type: chatType,
+          content: message,
+        }
+
+        if (chatType === "individual") {
+          data.targetId = target
+        } else {
+          data.group = target
+        }
+
+        socket.send(JSON.stringify(data))
+        messageInput.value = ""
+      }
+
+      function createGroup() {
+        const groupName = newGroupInput.value
+        socket.send(
+          JSON.stringify({
+            type: "createGroup",
+            group: groupName,
+          })
+        )
+        newGroupInput.value = ""
+      }
+
+      function joinGroup() {
+        const groupName = newGroupInput.value
+        socket.send(
+          JSON.stringify({
+            type: "joinGroup",
+            group: groupName,
+          })
+        )
+        newGroupInput.value = ""
+      }
+
+      function updateTargetSelect() {
+        targetSelect.innerHTML = ""
+        if (chatTypeSelect.value === "individual") {
+          users.forEach((user) => {
+            if (user.userId !== currentUserId) {
+              const option = document.createElement("option")
+              option.value = user.userId
+              option.textContent = user.username
+              targetSelect.appendChild(option)
+            }
+          })
+        } else {
+          groups.forEach((group) => {
+            const option = document.createElement("option")
+            option.value = group.name
+            option.textContent = `${group.name} (${group.members.length} members)`
+            targetSelect.appendChild(option)
+          })
+        }
+      }
+
+      chatTypeSelect.addEventListener("change", updateTargetSelect)
+    </script>
+  </body>
+</html>
